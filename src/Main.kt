@@ -72,7 +72,7 @@ object Main {
             Regex("(<a href=\"(http:\\/\\/optifine\\.net\\/adloadx\\?f=OptiFine_(.*)\\.jar)\">\\(Mirror\\)<\\/a>)").findAll(
                 getStringFromUrl("https://optifine.net/downloads")
             )
-        val optifineVersion = versions.findLast {
+        val optifineVersion = versions.find {
             val (_, _, name) = it.destructured
             name.startsWith("${version.removeSuffix(".0")}_") || name.startsWith("${version.removeSuffix(".0")}.0_")
         }
