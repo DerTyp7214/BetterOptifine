@@ -1,5 +1,6 @@
 import com.google.gson.Gson
 import java.io.File
+import java.io.InputStream
 import java.net.URL
 import java.net.URLClassLoader
 import java.nio.file.Files
@@ -20,37 +21,44 @@ object Main {
             }.toMap()
             if (arguments["deleteThisFuckingDirectory"] == "true") {
                 path.deleteRecursively()
+            } else if (arguments.isEmpty()) {
+                println()
+                println("Arguments:")
+                println()
+                println("\tversion=<version>")
+                println("\toutput=<outputPath>")
+                println()
             } else {
                 val versionString = arguments["version"]
                 if (versionString != null) {
                     val optifine = downloadOptifine(versionString, path)
+                    val outputPath = arguments["output"]
                     val gson = Gson()
-                    val manifest = gson.fromJson(URL(versionManifest).readText(), VersionManifest::class.java)
+                    val manifest = gson.fromJson(getStringFromUrl(versionManifest), VersionManifest::class.java)
                     val version = manifest.versions.findLast {
-                        it.id == arguments["version"]
+                        it.id == arguments["version"] || "${it.id}.0" == arguments["version"]
+                    }
+                    arguments.forEach {
+                        println("${it.key}: ${it.value}")
                     }
                     if (version != null && optifine != null) {
                         val versionPath = File(path, "versions/${version.id}")
                         versionPath.mkdirs()
-                        val versionJsonText = URL(version.url).readText()
+                        val versionJsonText = getStringFromUrl(version.url)
                         val versionJson = gson.fromJson(versionJsonText, VersionJson::class.java)
                         Files.copy(
-                            URL(versionJson.downloads.client.url).openStream(),
+                            URL(versionJson.downloads.client.url).openCustomStream(),
                             File(versionPath, "${version.id}.jar").toPath(),
                             StandardCopyOption.REPLACE_EXISTING
                         )
                         File(versionPath, "${version.id}.json").writeText(versionJsonText)
                         doExtract(optifine, path).walk().findLast {
                             it.isFile && it.name.endsWith(".jar")
-                        }?.copyTo(File("OptiFile_${version.id}.jar"), true)
-                        Runtime.getRuntime().exec(
-                            arrayOf(
-                                "java",
-                                "-jar",
-                                File(this::class.java.protectionDomain.codeSource.location.path).name,
-                                "deleteThisFuckingDirectory=true"
-                            )
+                        }?.copyTo(
+                            File(outputPath ?: System.getProperty("user.dir"), "OptiFile_${version.id}.jar").also { println("Copy To: ${it.absolutePath}") },
+                            true
                         )
+                        path.deleteRecursively()
                     }
                 }
             }
@@ -62,22 +70,41 @@ object Main {
     private fun downloadOptifine(version: String, path: File): File? {
         val versions =
             Regex("(<a href=\"(http:\\/\\/optifine\\.net\\/adloadx\\?f=OptiFine_(.*)\\.jar)\">\\(Mirror\\)<\\/a>)").findAll(
-                URL("https://optifine.net/downloads").readText()
+                getStringFromUrl("https://optifine.net/downloads")
             )
         val optifineVersion = versions.findLast {
             val (_, _, name) = it.destructured
-            name.startsWith("${version}_")
+            name.startsWith("${version.removeSuffix(".0")}_") || name.startsWith("${version.removeSuffix(".0")}.0_")
         }
         return if (optifineVersion != null) {
             val url = optifineVersion.groupValues[2].replaceFirst("http", "https")
-            val result = Regex("<a href=[\"'](downloadx\\?f=OptiFine_.*\\.jar&x=.{32})[\"']").find(URL(url).readText())
+            val result =
+                Regex("<a href=[\"'](downloadx\\?f=OptiFine_.*\\.jar&x=.{32})[\"']").find(getStringFromUrl(url))
             if (result != null) {
                 val downloadUrl = url.replace(Regex("adloadx.*"), result.groupValues[1])
                 val output = File(path, "OptiFile.jar")
-                Files.copy(URL(downloadUrl).openStream(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                Files.copy(URL(downloadUrl).openCustomStream(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
                 output
             } else null
         } else null
+    }
+
+    private fun getStringFromUrl(url: String): String {
+        val connection = URL(url).openConnection()
+        connection.setRequestProperty(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4343.0 Safari/537.36"
+        )
+        return connection.getInputStream().bufferedReader().readText()
+    }
+
+    private fun URL.openCustomStream(): InputStream {
+        val connection = openConnection()
+        connection.setRequestProperty(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4343.0 Safari/537.36"
+        )
+        return connection.getInputStream()
     }
 
     private fun doExtract(optifineJar: File, dirMc: File): File {
