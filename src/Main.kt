@@ -16,9 +16,9 @@ object Main {
         try {
             val path = File(System.getProperty("user.dir"), "tmp")
             path.mkdirs()
-            val arguments = args.map {
+            val arguments = args.associate {
                 Pair(it.split("=").first(), it.split("=").last())
-            }.toMap()
+            }
             if (arguments["deleteThisFuckingDirectory"] == "true") {
                 path.deleteRecursively()
             } else if (arguments.isEmpty()) {
